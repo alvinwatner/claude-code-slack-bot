@@ -41,9 +41,8 @@ export class ClaudeHandler {
   ): AsyncGenerator<SDKMessage, void, unknown> {
     const options: any = {
       outputFormat: 'stream-json',
-      // TODO: Re-enable permission prompts once MCP server is fixed
-      // permissionMode: slackContext ? 'default' : 'bypassPermissions',
-      permissionMode: 'bypassPermissions',
+      // Use 'default' mode since 'bypassPermissions' doesn't work with root user
+      permissionMode: 'default',
     };
 
     // TODO: Re-enable permission prompt tool once MCP server is fixed
