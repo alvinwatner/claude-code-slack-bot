@@ -148,44 +148,18 @@ export class SlackHandler {
       return;
     }
 
-    // Check if we have a working directory set
+    // Check if we have a working directory set, use default if not
     const isDM = channel.startsWith('D');
-    const workingDirectory = this.workingDirManager.getWorkingDirectory(
+    let workingDirectory = this.workingDirManager.getWorkingDirectory(
       channel,
       thread_ts,
       isDM ? user : undefined
     );
 
-    // Working directory is always required
+    // Use default working directory if none is set
     if (!workingDirectory) {
-      let errorMessage = `⚠️ No working directory set. `;
-      
-      if (!isDM && !this.workingDirManager.hasChannelWorkingDirectory(channel)) {
-        // No channel default set
-        errorMessage += `Please set a default working directory for this channel first using:\n`;
-        if (config.baseDirectory) {
-          errorMessage += `\`cwd project-name\` or \`cwd /absolute/path\`\n\n`;
-          errorMessage += `Base directory: \`${config.baseDirectory}\``;
-        } else {
-          errorMessage += `\`cwd /path/to/directory\``;
-        }
-      } else if (thread_ts) {
-        // In thread but no thread-specific directory
-        errorMessage += `You can set a thread-specific working directory using:\n`;
-        if (config.baseDirectory) {
-          errorMessage += `\`@claudebot cwd project-name\` or \`@claudebot cwd /absolute/path\``;
-        } else {
-          errorMessage += `\`@claudebot cwd /path/to/directory\``;
-        }
-      } else {
-        errorMessage += `Please set one first using:\n\`cwd /path/to/directory\``;
-      }
-      
-      await say({
-        text: errorMessage,
-        thread_ts: thread_ts || ts,
-      });
-      return;
+      workingDirectory = config.defaultWorkingDirectory;
+      this.logger.info('Using default working directory', { directory: workingDirectory });
     }
 
     const sessionKey = this.claudeHandler.getSessionKey(user, channel, thread_ts || ts);
