@@ -150,7 +150,17 @@ class PermissionMCPServer {
   }
 
   private async handlePermissionPrompt(params: PermissionRequest) {
+    // Log received parameters for debugging
+    logger.info('Permission prompt received', {
+      params: JSON.stringify(params),
+      hasInput: !!params?.input,
+      inputType: typeof params?.input
+    });
+
     const { tool_name, input } = params;
+
+    // Ensure input is not null/undefined
+    const toolInput = input || {};
 
     // Get Slack context from environment (passed by Claude handler)
     const slackContextStr = process.env.SLACK_CONTEXT;
@@ -161,19 +171,22 @@ class PermissionMCPServer {
     const approvalId = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     // Register approval with main bot
-    const registered = await this.registerApproval(approvalId, tool_name, input);
+    const registered = await this.registerApproval(approvalId, tool_name, toolInput);
     if (!registered) {
       logger.error('Failed to register approval', { approvalId });
       return {
         content: [{
           type: "text",
-          text: "deny"
+          text: JSON.stringify({
+            behavior: "deny",
+            message: "Failed to register approval"
+          })
         }]
       };
     }
 
     // Truncate input for display if too long
-    const inputStr = JSON.stringify(input, null, 2);
+    const inputStr = JSON.stringify(toolInput, null, 2);
     const truncatedInput = inputStr.length > 1500
       ? inputStr.substring(0, 1500) + '\n... (truncated)'
       : inputStr;
@@ -267,12 +280,17 @@ class PermissionMCPServer {
       // Cleanup the approval
       await this.cleanupApproval(approvalId);
 
-      // Return just the behavior string - Claude Code expects "allow" or "deny"
+      // Return JSON object with behavior and updatedInput (for allow) or message (for deny)
+      // Claude Code SDK expects: { behavior: "allow", updatedInput: {...} } or { behavior: "deny", message: "..." }
       return {
         content: [
           {
             type: "text",
-            text: response.behavior
+            text: JSON.stringify(
+              response.behavior === 'allow'
+                ? { behavior: 'allow', updatedInput: toolInput }
+                : { behavior: 'deny', message: response.message || 'User denied permission' }
+            )
           }
         ]
       };
@@ -282,12 +300,15 @@ class PermissionMCPServer {
       // Cleanup on error
       await this.cleanupApproval(approvalId);
 
-      // Return "deny" on error
+      // Return deny with error message
       return {
         content: [
           {
             type: "text",
-            text: "deny"
+            text: JSON.stringify({
+              behavior: "deny",
+              message: "Error handling permission prompt"
+            })
           }
         ]
       };
