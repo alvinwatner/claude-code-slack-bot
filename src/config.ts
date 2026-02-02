@@ -5,9 +5,10 @@ dotenv.config();
 export type PermissionMode = 'plan' | 'auto' | 'ask';
 
 // Map user-friendly mode names to SDK permission modes
+// Valid SDK modes: acceptEdits, bypassPermissions, default, plan
 export const permissionModeMap: Record<PermissionMode, string> = {
   plan: 'plan',
-  auto: 'acceptAll',
+  auto: 'acceptEdits',
   ask: 'default',
 };
 
