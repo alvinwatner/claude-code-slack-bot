@@ -6,7 +6,8 @@ import { WorkingDirectoryManager } from './working-directory-manager';
 import { FileHandler, ProcessedFile } from './file-handler';
 import { TodoManager, Todo } from './todo-manager';
 import { McpManager } from './mcp-manager';
-import { permissionServer } from './permission-mcp-server';
+// TODO: Re-enable when permission system is fixed
+// import { permissionServer } from './permission-mcp-server';
 import { config } from './config';
 
 interface MessageEvent {
@@ -835,33 +836,34 @@ export class SlackHandler {
       }
     });
 
+    // TODO: Re-enable when permission system is fixed
     // Handle permission approval button clicks
-    this.app.action('approve_tool', async ({ ack, body, respond }) => {
-      await ack();
-      const approvalId = (body as any).actions[0].value;
-      this.logger.info('Tool approval granted', { approvalId });
-      
-      permissionServer.resolveApproval(approvalId, true);
-      
-      await respond({
-        response_type: 'ephemeral',
-        text: '✅ Tool execution approved'
-      });
-    });
+    // this.app.action('approve_tool', async ({ ack, body, respond }) => {
+    //   await ack();
+    //   const approvalId = (body as any).actions[0].value;
+    //   this.logger.info('Tool approval granted', { approvalId });
+    //
+    //   permissionServer.resolveApproval(approvalId, true);
+    //
+    //   await respond({
+    //     response_type: 'ephemeral',
+    //     text: '✅ Tool execution approved'
+    //   });
+    // });
 
     // Handle permission denial button clicks
-    this.app.action('deny_tool', async ({ ack, body, respond }) => {
-      await ack();
-      const approvalId = (body as any).actions[0].value;
-      this.logger.info('Tool approval denied', { approvalId });
-      
-      permissionServer.resolveApproval(approvalId, false);
-      
-      await respond({
-        response_type: 'ephemeral',
-        text: '❌ Tool execution denied'
-      });
-    });
+    // this.app.action('deny_tool', async ({ ack, body, respond }) => {
+    //   await ack();
+    //   const approvalId = (body as any).actions[0].value;
+    //   this.logger.info('Tool approval denied', { approvalId });
+    //
+    //   permissionServer.resolveApproval(approvalId, false);
+    //
+    //   await respond({
+    //     response_type: 'ephemeral',
+    //     text: '❌ Tool execution denied'
+    //   });
+    // });
 
     // Cleanup inactive sessions periodically
     setInterval(() => {
