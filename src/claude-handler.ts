@@ -2,14 +2,27 @@ import { query, type SDKMessage } from '@anthropic-ai/claude-code';
 import { ConversationSession } from './types';
 import { Logger } from './logger';
 import { McpManager, McpServerConfig } from './mcp-manager';
+import { config, PermissionMode, permissionModeMap } from './config';
 
 export class ClaudeHandler {
   private sessions: Map<string, ConversationSession> = new Map();
   private logger = new Logger('ClaudeHandler');
   private mcpManager: McpManager;
+  private currentPermissionMode: PermissionMode;
 
   constructor(mcpManager: McpManager) {
     this.mcpManager = mcpManager;
+    this.currentPermissionMode = config.defaultPermissionMode;
+    this.logger.info('Initialized with permission mode', { mode: this.currentPermissionMode });
+  }
+
+  getPermissionMode(): PermissionMode {
+    return this.currentPermissionMode;
+  }
+
+  setPermissionMode(mode: PermissionMode): void {
+    this.currentPermissionMode = mode;
+    this.logger.info('Permission mode changed', { mode });
   }
 
   getSessionKey(userId: string, channelId: string, threadTs?: string): string {
@@ -41,8 +54,8 @@ export class ClaudeHandler {
   ): AsyncGenerator<SDKMessage, void, unknown> {
     const options: any = {
       outputFormat: 'stream-json',
-      // Use 'default' mode since 'bypassPermissions' doesn't work with root user
-      permissionMode: 'default',
+      // Permission mode is configurable via Slack command: mode plan/auto/ask
+      permissionMode: permissionModeMap[this.currentPermissionMode],
     };
 
     // TODO: Re-enable permission prompt tool once MCP server is fixed

@@ -2,6 +2,23 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+export type PermissionMode = 'plan' | 'auto' | 'ask';
+
+// Map user-friendly mode names to SDK permission modes
+export const permissionModeMap: Record<PermissionMode, string> = {
+  plan: 'plan',
+  auto: 'acceptAll',
+  ask: 'default',
+};
+
+function getDefaultPermissionMode(): PermissionMode {
+  const envMode = process.env.PERMISSION_MODE?.toLowerCase();
+  if (envMode === 'plan' || envMode === 'auto' || envMode === 'ask') {
+    return envMode;
+  }
+  return 'auto'; // Default to auto-approve
+}
+
 export const config = {
   slack: {
     botToken: process.env.SLACK_BOT_TOKEN!,
@@ -17,6 +34,7 @@ export const config = {
   },
   baseDirectory: process.env.BASE_DIRECTORY || '',
   defaultWorkingDirectory: process.env.DEFAULT_WORKING_DIRECTORY || '/root/projects',
+  defaultPermissionMode: getDefaultPermissionMode(),
   debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development',
 };
 

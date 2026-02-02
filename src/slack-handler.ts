@@ -8,7 +8,7 @@ import { TodoManager, Todo } from './todo-manager';
 import { McpManager } from './mcp-manager';
 // TODO: Re-enable when permission system is fixed
 // import { permissionServer } from './permission-mcp-server';
-import { config } from './config';
+import { config, PermissionMode } from './config';
 
 interface MessageEvent {
   user: string;
@@ -142,6 +142,25 @@ export class SlackHandler {
       } else {
         await say({
           text: `❌ Failed to reload MCP configuration. Check the mcp-servers.json file.`,
+          thread_ts: thread_ts || ts,
+        });
+      }
+      return;
+    }
+
+    // Check if this is a mode command (only if there's text)
+    if (text && this.isModeCommand(text)) {
+      const newMode = this.parseModeCommand(text);
+      if (newMode) {
+        this.claudeHandler.setPermissionMode(newMode);
+        await say({
+          text: `✅ Permission mode changed to *${newMode}*\n\n${this.formatModeInfo()}`,
+          thread_ts: thread_ts || ts,
+        });
+      } else {
+        // Just show current mode info
+        await say({
+          text: this.formatModeInfo(),
           thread_ts: thread_ts || ts,
         });
       }
@@ -630,6 +649,39 @@ export class SlackHandler {
 
   private isMcpReloadCommand(text: string): boolean {
     return /^(mcp|servers?)\s+(reload|refresh)$/i.test(text.trim());
+  }
+
+  private isModeCommand(text: string): boolean {
+    return /^mode(\s+(plan|auto|ask))?$/i.test(text.trim());
+  }
+
+  private parseModeCommand(text: string): PermissionMode | null {
+    const match = text.trim().match(/^mode\s+(plan|auto|ask)$/i);
+    if (match) {
+      return match[1].toLowerCase() as PermissionMode;
+    }
+    return null;
+  }
+
+  private formatModeInfo(): string {
+    const currentMode = this.claudeHandler.getPermissionMode();
+    const modeDescriptions: Record<PermissionMode, string> = {
+      plan: '📋 *Plan* - Claude will only plan, no file edits allowed',
+      auto: '🚀 *Auto* - Claude auto-approves all actions (current default)',
+      ask: '🔐 *Ask* - Claude asks before making changes (requires approval mechanism)',
+    };
+
+    let message = `🔧 *Permission Mode*\n\n`;
+    message += `Current mode: *${currentMode}*\n\n`;
+    message += `Available modes:\n`;
+
+    for (const [mode, description] of Object.entries(modeDescriptions)) {
+      const isCurrent = mode === currentMode;
+      message += `${isCurrent ? '→ ' : '  '}${description}${isCurrent ? ' ✓' : ''}\n`;
+    }
+
+    message += `\nTo change: \`mode plan\`, \`mode auto\`, or \`mode ask\``;
+    return message;
   }
 
   private async getBotUserId(): Promise<string> {
