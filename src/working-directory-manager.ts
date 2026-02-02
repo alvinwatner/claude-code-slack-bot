@@ -139,17 +139,55 @@ export class WorkingDirectoryManager {
   }
 
   parseSetCommand(text: string): string | null {
+    this.logger.debug('parseSetCommand input', { text });
+
     const cwdMatch = text.match(/^cwd\s+(.+)$/i);
     if (cwdMatch) {
-      return cwdMatch[1].trim();
+      const rawPath = cwdMatch[1].trim();
+      const cleanedPath = this.cleanSlackFormatting(rawPath);
+      this.logger.debug('parseSetCommand cwd match', { rawPath, cleanedPath });
+      return cleanedPath;
     }
 
     const setMatch = text.match(/^set\s+(?:cwd|dir|directory|working[- ]?directory)\s+(.+)$/i);
     if (setMatch) {
-      return setMatch[1].trim();
+      const rawPath = setMatch[1].trim();
+      const cleanedPath = this.cleanSlackFormatting(rawPath);
+      this.logger.debug('parseSetCommand set match', { rawPath, cleanedPath });
+      return cleanedPath;
     }
 
     return null;
+  }
+
+  // Clean Slack's formatting from paths
+  // Handles: backticks, auto-links, etc.
+  private cleanSlackFormatting(text: string): string {
+    let cleaned = text;
+
+    // Remove backticks (inline code formatting)
+    if (cleaned.startsWith('`') && cleaned.endsWith('`')) {
+      cleaned = cleaned.slice(1, -1);
+    }
+
+    // Handle <URL|display_text> format - extract display_text
+    const pipeMatch = cleaned.match(/^<[^|>]+\|([^>]+)>$/);
+    if (pipeMatch) {
+      return pipeMatch[1];
+    }
+
+    // Handle <URL> format - extract URL and remove file:// prefix
+    const urlMatch = cleaned.match(/^<([^>]+)>$/);
+    if (urlMatch) {
+      let url = urlMatch[1];
+      // Remove file:// prefix if present
+      if (url.startsWith('file://')) {
+        url = url.replace('file://', '');
+      }
+      return url;
+    }
+
+    return cleaned;
   }
 
   isGetCommand(text: string): boolean {

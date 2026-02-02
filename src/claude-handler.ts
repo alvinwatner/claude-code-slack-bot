@@ -41,14 +41,17 @@ export class ClaudeHandler {
   ): AsyncGenerator<SDKMessage, void, unknown> {
     const options: any = {
       outputFormat: 'stream-json',
-      permissionMode: slackContext ? 'default' : 'bypassPermissions',
+      // TODO: Re-enable permission prompts once MCP server is fixed
+      // permissionMode: slackContext ? 'default' : 'bypassPermissions',
+      permissionMode: 'bypassPermissions',
     };
 
+    // TODO: Re-enable permission prompt tool once MCP server is fixed
     // Add permission prompt tool if we have Slack context
-    if (slackContext) {
-      options.permissionPromptToolName = 'mcp__permission-prompt__permission_prompt';
-      this.logger.debug('Added permission prompt tool for Slack integration', slackContext);
-    }
+    // if (slackContext) {
+    //   options.permissionPromptToolName = 'mcp__permission-prompt__permission_prompt';
+    //   this.logger.debug('Added permission prompt tool for Slack integration', slackContext);
+    // }
 
     if (workingDirectory) {
       options.cwd = workingDirectory;
@@ -56,35 +59,35 @@ export class ClaudeHandler {
 
     // Add MCP server configuration if available
     const mcpServers = this.mcpManager.getServerConfiguration();
-    
+
+    // TODO: Re-enable permission prompt server once fixed
     // Add permission prompt server if we have Slack context
-    if (slackContext) {
-      const permissionServer = {
-        'permission-prompt': {
-          command: 'npx',
-          args: ['tsx', '/Users/marcelpociot/Experiments/claude-code-slack/src/permission-mcp-server.ts'],
-          env: {
-            SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
-            SLACK_CONTEXT: JSON.stringify(slackContext)
-          }
-        }
-      };
-      
-      if (mcpServers) {
-        options.mcpServers = { ...mcpServers, ...permissionServer };
-      } else {
-        options.mcpServers = permissionServer;
-      }
-    } else if (mcpServers && Object.keys(mcpServers).length > 0) {
+    // if (slackContext) {
+    //   const permissionServerPath = path.join(__dirname, 'permission-mcp-server.ts');
+    //   const permissionServer = {
+    //     'permission-prompt': {
+    //       command: 'npx',
+    //       args: ['tsx', permissionServerPath],
+    //       env: {
+    //         SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
+    //         SLACK_CONTEXT: JSON.stringify(slackContext)
+    //       }
+    //     }
+    //   };
+    //
+    //   if (mcpServers) {
+    //     options.mcpServers = { ...mcpServers, ...permissionServer };
+    //   } else {
+    //     options.mcpServers = permissionServer;
+    //   }
+    // } else
+    if (mcpServers && Object.keys(mcpServers).length > 0) {
       options.mcpServers = mcpServers;
     }
-    
+
     if (options.mcpServers && Object.keys(options.mcpServers).length > 0) {
-      // Allow all MCP tools by default, plus permission prompt tool
+      // Allow all MCP tools by default
       const defaultMcpTools = this.mcpManager.getDefaultAllowedTools();
-      if (slackContext) {
-        defaultMcpTools.push('mcp__permission-prompt');
-      }
       if (defaultMcpTools.length > 0) {
         options.allowedTools = defaultMcpTools;
       }

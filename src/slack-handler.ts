@@ -215,10 +215,16 @@ export class SlackHandler {
     let statusMessageTs: string | undefined;
 
     try {
-      // Prepare the prompt with file attachments
-      const finalPrompt = processedFiles.length > 0 
+      // Fetch thread history for context
+      const threadHistory = await this.getThreadHistory(channel, thread_ts, ts);
+
+      // Prepare the prompt with file attachments and thread history
+      let basePrompt = processedFiles.length > 0
         ? await this.fileHandler.formatFilePrompt(processedFiles, text || '')
         : text || '';
+
+      // Prepend thread history if available
+      const finalPrompt = threadHistory ? `${threadHistory}${basePrompt}` : basePrompt;
 
       this.logger.info('Sending query to Claude Code SDK', { 
         prompt: finalPrompt.substring(0, 200) + (finalPrompt.length > 200 ? '...' : ''), 
@@ -662,6 +668,86 @@ export class SlackHandler {
       }
     }
     return this.botUserId;
+  }
+
+  /**
+   * Fetch thread history to provide context to Claude
+   */
+  private async getThreadHistory(
+    channel: string,
+    thread_ts: string | undefined,
+    currentTs: string,
+    maxMessages: number = 50
+  ): Promise<string> {
+    if (!thread_ts) {
+      return '';
+    }
+
+    try {
+      const botUserId = await this.getBotUserId();
+
+      const result = await this.app.client.conversations.replies({
+        channel,
+        ts: thread_ts,
+        limit: maxMessages,
+        inclusive: true,
+      });
+
+      if (!result.messages || result.messages.length <= 1) {
+        return '';
+      }
+
+      const userCache: Map<string, string> = new Map();
+      const getUserName = async (userId: string): Promise<string> => {
+        if (userCache.has(userId)) {
+          return userCache.get(userId)!;
+        }
+        try {
+          const userInfo = await this.app.client.users.info({ user: userId });
+          const name = (userInfo.user as any)?.real_name || (userInfo.user as any)?.name || userId;
+          userCache.set(userId, name);
+          return name;
+        } catch {
+          userCache.set(userId, userId);
+          return userId;
+        }
+      };
+
+      const historyLines: string[] = [];
+      for (const msg of result.messages) {
+        if (msg.ts === currentTs) continue;
+
+        if (msg.user === botUserId) {
+          const text = msg.text || '';
+          if (text.includes('Thinking...') || text.includes('Working...') || text.includes('Task completed')) {
+            continue;
+          }
+        }
+
+        const isBot = msg.user === botUserId;
+        const userName = isBot ? 'Claude Bot' : await getUserName(msg.user || 'Unknown');
+        const text = msg.text || '[no text]';
+
+        let attachmentInfo = '';
+        if ((msg as any).files && (msg as any).files.length > 0) {
+          const fileNames = (msg as any).files.map((f: any) => f.name).join(', ');
+          attachmentInfo = ` [Attached files: ${fileNames}]`;
+        }
+
+        historyLines.push(`[${userName}]: ${text}${attachmentInfo}`);
+      }
+
+      if (historyLines.length === 0) {
+        return '';
+      }
+
+      this.logger.info('Fetched thread history', { channel, thread_ts, messageCount: historyLines.length });
+
+      return `--- THREAD HISTORY (${historyLines.length} previous messages) ---\n${historyLines.join('\n')}\n--- END THREAD HISTORY ---\n\nCurrent message:\n`;
+    } catch (error) {
+      this.logger.error('Failed to fetch thread history', error);
+      return '';
+    }
   }
 
   private async handleChannelJoin(channelId: string, say: any): Promise<void> {
