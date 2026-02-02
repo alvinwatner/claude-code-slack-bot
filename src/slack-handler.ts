@@ -167,6 +167,15 @@ export class SlackHandler {
       return;
     }
 
+    // Check if this is a stop command (only if there's text)
+    if (text && this.isStopCommand(text)) {
+      const stopped = await this.handleStopCommand(user, channel, thread_ts, ts, say);
+      if (stopped) {
+        return;
+      }
+      // If nothing was stopped, continue processing as normal message
+    }
+
     // Check if we have a working directory set, use default if not
     const isDM = channel.startsWith('D');
     let workingDirectory = this.workingDirManager.getWorkingDirectory(
@@ -653,6 +662,58 @@ export class SlackHandler {
 
   private isModeCommand(text: string): boolean {
     return /^mode(\s+(plan|auto|ask))?$/i.test(text.trim());
+  }
+
+  private isStopCommand(text: string): boolean {
+    return /^(stop|cancel|abort|halt)$/i.test(text.trim());
+  }
+
+  private async handleStopCommand(
+    user: string,
+    channel: string,
+    thread_ts: string | undefined,
+    ts: string,
+    say: any
+  ): Promise<boolean> {
+    // Find active controllers for this user in this channel/thread
+    const threadKey = this.claudeHandler.getSessionKey(user, channel, thread_ts || ts);
+    const channelKey = this.claudeHandler.getSessionKey(user, channel, thread_ts || 'direct');
+
+    let stopped = false;
+
+    // Try to stop thread-specific session first
+    const threadController = this.activeControllers.get(threadKey);
+    if (threadController) {
+      this.logger.info('Stopping active request', { sessionKey: threadKey });
+      threadController.abort();
+      this.activeControllers.delete(threadKey);
+      stopped = true;
+    }
+
+    // Also check channel-level session if different
+    if (threadKey !== channelKey) {
+      const channelController = this.activeControllers.get(channelKey);
+      if (channelController) {
+        this.logger.info('Stopping active request', { sessionKey: channelKey });
+        channelController.abort();
+        this.activeControllers.delete(channelKey);
+        stopped = true;
+      }
+    }
+
+    if (stopped) {
+      await say({
+        text: `⏹️ Stopped the current operation.`,
+        thread_ts: thread_ts || ts,
+      });
+      return true;
+    } else {
+      await say({
+        text: `ℹ️ No active operation to stop.`,
+        thread_ts: thread_ts || ts,
+      });
+      return false;
+    }
   }
 
   private parseModeCommand(text: string): PermissionMode | null {
