@@ -6,8 +6,6 @@ import { WorkingDirectoryManager } from './working-directory-manager';
 import { FileHandler, ProcessedFile } from './file-handler';
 import { TodoManager, Todo } from './todo-manager';
 import { McpManager } from './mcp-manager';
-// TODO: Re-enable when permission system is fixed
-// import { permissionServer } from './permission-mcp-server';
 import { config, PermissionMode } from './config';
 
 interface MessageEvent {
@@ -923,34 +921,59 @@ export class SlackHandler {
       }
     });
 
-    // TODO: Re-enable when permission system is fixed
     // Handle permission approval button clicks
-    // this.app.action('approve_tool', async ({ ack, body, respond }) => {
-    //   await ack();
-    //   const approvalId = (body as any).actions[0].value;
-    //   this.logger.info('Tool approval granted', { approvalId });
-    //
-    //   permissionServer.resolveApproval(approvalId, true);
-    //
-    //   await respond({
-    //     response_type: 'ephemeral',
-    //     text: '✅ Tool execution approved'
-    //   });
-    // });
+    this.app.action('approve_tool', async ({ ack, body, respond }) => {
+      await ack();
+      const approvalId = (body as any).actions[0].value;
+      this.logger.info('Tool approval granted', { approvalId });
+
+      try {
+        const port = config.permissionServerPort;
+        const response = await fetch(`http://localhost:${port}/approve/${approvalId}`, {
+          method: 'POST',
+        });
+        const result = await response.json();
+        this.logger.debug('Approval response', { result });
+
+        await respond({
+          response_type: 'ephemeral',
+          text: '✅ Tool execution approved'
+        });
+      } catch (error) {
+        this.logger.error('Failed to send approval to permission server', error);
+        await respond({
+          response_type: 'ephemeral',
+          text: '⚠️ Approval sent but could not confirm with permission server'
+        });
+      }
+    });
 
     // Handle permission denial button clicks
-    // this.app.action('deny_tool', async ({ ack, body, respond }) => {
-    //   await ack();
-    //   const approvalId = (body as any).actions[0].value;
-    //   this.logger.info('Tool approval denied', { approvalId });
-    //
-    //   permissionServer.resolveApproval(approvalId, false);
-    //
-    //   await respond({
-    //     response_type: 'ephemeral',
-    //     text: '❌ Tool execution denied'
-    //   });
-    // });
+    this.app.action('deny_tool', async ({ ack, body, respond }) => {
+      await ack();
+      const approvalId = (body as any).actions[0].value;
+      this.logger.info('Tool approval denied', { approvalId });
+
+      try {
+        const port = config.permissionServerPort;
+        const response = await fetch(`http://localhost:${port}/deny/${approvalId}`, {
+          method: 'POST',
+        });
+        const result = await response.json();
+        this.logger.debug('Denial response', { result });
+
+        await respond({
+          response_type: 'ephemeral',
+          text: '❌ Tool execution denied'
+        });
+      } catch (error) {
+        this.logger.error('Failed to send denial to permission server', error);
+        await respond({
+          response_type: 'ephemeral',
+          text: '⚠️ Denial sent but could not confirm with permission server'
+        });
+      }
+    });
 
     // Cleanup inactive sessions periodically
     setInterval(() => {

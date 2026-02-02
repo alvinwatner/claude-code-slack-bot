@@ -36,6 +36,7 @@ export const config = {
   baseDirectory: process.env.BASE_DIRECTORY || '',
   defaultWorkingDirectory: process.env.DEFAULT_WORKING_DIRECTORY || '/root/projects',
   defaultPermissionMode: getDefaultPermissionMode(),
+  permissionServerPort: parseInt(process.env.PERMISSION_SERVER_PORT || '3847', 10),
   debug: process.env.DEBUG === 'true' || process.env.NODE_ENV === 'development',
 };
 
