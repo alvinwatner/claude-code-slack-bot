@@ -4,6 +4,7 @@ import { ClaudeHandler } from './claude-handler';
 import { SlackHandler } from './slack-handler';
 import { McpManager } from './mcp-manager';
 import { Logger } from './logger';
+import { approvalManager } from './approval-manager';
 
 const logger = new Logger('Main');
 
@@ -11,6 +12,9 @@ async function start() {
   try {
     // Validate configuration
     validateConfig();
+
+    // Start the approval manager HTTP server
+    approvalManager.start();
 
     logger.info('Starting Claude Code Slack bot', {
       debug: config.debug,

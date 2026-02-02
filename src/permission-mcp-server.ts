@@ -7,7 +7,6 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { WebClient } from '@slack/web-api';
-import * as http from 'http';
 import { Logger } from './logger';
 
 const logger = new Logger('PermissionMCP');
@@ -29,11 +28,7 @@ interface PermissionResponse {
 class PermissionMCPServer {
   private server: Server;
   private slack: WebClient;
-  private httpServer: http.Server | null = null;
-  private pendingApprovals = new Map<string, {
-    resolve: (response: PermissionResponse) => void;
-    reject: (error: Error) => void;
-  }>();
+  private approvalServerPort: number;
 
   constructor() {
     this.server = new Server(
@@ -49,77 +44,8 @@ class PermissionMCPServer {
     );
 
     this.slack = new WebClient(process.env.SLACK_BOT_TOKEN);
+    this.approvalServerPort = parseInt(process.env.PERMISSION_SERVER_PORT || '3847', 10);
     this.setupHandlers();
-    this.startHttpServer();
-  }
-
-  private startHttpServer() {
-    const port = parseInt(process.env.PERMISSION_SERVER_PORT || '3847', 10);
-
-    this.httpServer = http.createServer((req, res) => {
-      // Enable CORS
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-      res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-
-      if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
-      }
-
-      const url = new URL(req.url || '/', `http://localhost:${port}`);
-      const pathParts = url.pathname.split('/').filter(Boolean);
-
-      if (req.method === 'POST' && pathParts.length === 2) {
-        const [action, approvalId] = pathParts;
-
-        if (action === 'approve' || action === 'deny') {
-          const approved = action === 'approve';
-          const pending = this.pendingApprovals.get(approvalId);
-
-          if (pending) {
-            this.pendingApprovals.delete(approvalId);
-            pending.resolve({
-              behavior: approved ? 'allow' : 'deny',
-              message: approved ? 'Approved by user' : 'Denied by user'
-            });
-
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: true, message: `Approval ${action}ed` }));
-            logger.info(`Approval ${action}ed`, { approvalId });
-          } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, message: 'Approval not found or already processed' }));
-            logger.warn('Approval not found', { approvalId });
-          }
-          return;
-        }
-      }
-
-      // Health check endpoint
-      if (req.method === 'GET' && url.pathname === '/health') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ status: 'ok', pendingApprovals: this.pendingApprovals.size }));
-        return;
-      }
-
-      res.writeHead(404, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: 'Not found' }));
-    });
-
-    this.httpServer.listen(port, () => {
-      logger.info(`Permission HTTP server listening on port ${port}`);
-    });
-
-    this.httpServer.on('error', (error: any) => {
-      if (error.code === 'EADDRINUSE') {
-        logger.warn(`Port ${port} already in use, trying next port`);
-        this.httpServer?.listen(port + 1);
-      } else {
-        logger.error('HTTP server error', error);
-      }
-    });
   }
 
   private setupHandlers() {
@@ -168,6 +94,61 @@ class PermissionMCPServer {
     });
   }
 
+  private async registerApproval(approvalId: string, toolName: string, input: any): Promise<boolean> {
+    try {
+      const response = await fetch(`http://localhost:${this.approvalServerPort}/register/${approvalId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ toolName, input }),
+      });
+      const result = await response.json() as { success: boolean };
+      return result.success;
+    } catch (error) {
+      logger.error('Failed to register approval with main bot', error);
+      return false;
+    }
+  }
+
+  private async pollApprovalStatus(approvalId: string, timeoutMs: number = 5 * 60 * 1000): Promise<PermissionResponse> {
+    const startTime = Date.now();
+    const pollInterval = 1000; // Poll every second
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const response = await fetch(`http://localhost:${this.approvalServerPort}/status/${approvalId}`);
+        const result = await response.json() as { success: boolean; status?: string };
+
+        if (result.success && result.status) {
+          if (result.status === 'approved') {
+            return { behavior: 'allow', message: 'Approved by user' };
+          } else if (result.status === 'denied') {
+            return { behavior: 'deny', message: 'Denied by user' };
+          }
+          // Status is 'pending', continue polling
+        }
+      } catch (error) {
+        logger.warn('Error polling approval status, retrying...', { approvalId });
+      }
+
+      // Wait before next poll
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+    }
+
+    // Timeout
+    logger.info('Permission request timed out', { approvalId });
+    return { behavior: 'deny', message: 'Permission request timed out' };
+  }
+
+  private async cleanupApproval(approvalId: string): Promise<void> {
+    try {
+      await fetch(`http://localhost:${this.approvalServerPort}/cleanup/${approvalId}`, {
+        method: 'POST',
+      });
+    } catch (error) {
+      // Ignore cleanup errors
+    }
+  }
+
   private async handlePermissionPrompt(params: PermissionRequest) {
     const { tool_name, input } = params;
 
@@ -178,6 +159,18 @@ class PermissionMCPServer {
 
     // Generate unique approval ID
     const approvalId = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+    // Register approval with main bot
+    const registered = await this.registerApproval(approvalId, tool_name, input);
+    if (!registered) {
+      logger.error('Failed to register approval', { approvalId });
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify({ behavior: 'deny', message: 'Failed to register approval request' })
+        }]
+      };
+    }
 
     // Truncate input for display if too long
     const inputStr = JSON.stringify(input, null, 2);
@@ -241,8 +234,8 @@ class PermissionMCPServer {
 
       logger.info('Sent permission request to Slack', { approvalId, tool_name, channel });
 
-      // Wait for user response
-      const response = await this.waitForApproval(approvalId);
+      // Poll for user response
+      const response = await this.pollApprovalStatus(approvalId);
 
       // Update the message to show the result
       if (result.ts) {
@@ -271,6 +264,9 @@ class PermissionMCPServer {
         });
       }
 
+      // Cleanup the approval
+      await this.cleanupApproval(approvalId);
+
       return {
         content: [
           {
@@ -281,6 +277,9 @@ class PermissionMCPServer {
       };
     } catch (error) {
       logger.error('Error handling permission prompt:', error);
+
+      // Cleanup on error
+      await this.cleanupApproval(approvalId);
 
       // Default to deny if there's an error
       const response: PermissionResponse = {
@@ -297,25 +296,6 @@ class PermissionMCPServer {
         ]
       };
     }
-  }
-
-  private async waitForApproval(approvalId: string): Promise<PermissionResponse> {
-    return new Promise((resolve, reject) => {
-      // Store the promise resolvers
-      this.pendingApprovals.set(approvalId, { resolve, reject });
-
-      // Set timeout (5 minutes)
-      setTimeout(() => {
-        if (this.pendingApprovals.has(approvalId)) {
-          this.pendingApprovals.delete(approvalId);
-          logger.info('Permission request timed out', { approvalId });
-          resolve({
-            behavior: 'deny',
-            message: 'Permission request timed out'
-          });
-        }
-      }, 5 * 60 * 1000);
-    });
   }
 
   async run() {
