@@ -74,11 +74,12 @@ export class ClaudeHandler {
 
     // Add permission prompt server if we have Slack context
     if (slackContext) {
-      const permissionServerPath = path.join(__dirname, 'permission-mcp-server.ts');
+      // Use .js extension since __dirname points to dist/ in compiled code
+      const permissionServerPath = path.join(__dirname, 'permission-mcp-server.js');
       const permissionServer = {
         'permission-prompt': {
-          command: 'npx',
-          args: ['tsx', permissionServerPath],
+          command: 'node',
+          args: [permissionServerPath],
           env: {
             SLACK_BOT_TOKEN: process.env.SLACK_BOT_TOKEN,
             SLACK_CONTEXT: JSON.stringify(slackContext),
