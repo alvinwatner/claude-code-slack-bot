@@ -167,7 +167,7 @@ class PermissionMCPServer {
       return {
         content: [{
           type: "text",
-          text: JSON.stringify({ behavior: 'deny', message: 'Failed to register approval request' })
+          text: "deny"
         }]
       };
     }
@@ -267,11 +267,12 @@ class PermissionMCPServer {
       // Cleanup the approval
       await this.cleanupApproval(approvalId);
 
+      // Return just the behavior string - Claude Code expects "allow" or "deny"
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response)
+            text: response.behavior
           }
         ]
       };
@@ -281,17 +282,12 @@ class PermissionMCPServer {
       // Cleanup on error
       await this.cleanupApproval(approvalId);
 
-      // Default to deny if there's an error
-      const response: PermissionResponse = {
-        behavior: 'deny',
-        message: 'Error occurred while requesting permission'
-      };
-
+      // Return "deny" on error
       return {
         content: [
           {
             type: "text",
-            text: JSON.stringify(response)
+            text: "deny"
           }
         ]
       };
